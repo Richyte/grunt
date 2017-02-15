@@ -1,0 +1,269 @@
+var makeCRCTable = function () {
+    var c;
+    var crcTable = [];
+    for (var n = 0; n < 256; n++) {
+        c = n;
+        for (var k = 0; k < 8; k++) {
+            c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+        }
+        crcTable[n] = c;
+    }
+    return crcTable;
+};
+
+var crc32 = function (str) {
+    var crcTable = makeCRCTable();
+    var crc = 0 ^ (-1);
+
+    for (var i = 0; i < str.length; i++) {
+        crc = (crc >>> 8) ^ crcTable[(crc ^ str.charCodeAt(i)) & 0xFF];
+    }
+
+    return (crc ^ (-1)) >>> 0;
+};
+
+module.exports = function (grunt) {
+    require('load-grunt-tasks')(grunt);
+
+    // these variables are now inside module.exports = function(grunt) { so they can access the grunt object
+    var core_version = "beta";
+    var branch = grunt.option('branch') ? '.' + grunt.option('branch') : '';
+    var cwd = "../web" + branch + "/";
+    var name = __dirname.replace('/home/vhosts/', '').replace('/var/www/vhosts/', '').replace('/web', '');
+    var hash = crc32(name + branch);
+    var port = (hash % 64535) + 1000;
+    console.log("Live reload running on Port: " + port);
+
+    grunt.initConfig({
+        pkg: grunt.file.readJSON('package.json'),
+        sass: {
+            dev: {
+                options: {
+                    httpPath: '/',
+					imagesDir: 'images',
+                    javascriptsDir: 'js',
+                    noLineComments: true,
+                    environment: 'development'
+                },
+                files: [{
+                    cwd: cwd + 'scss',
+                    expand: true,
+                    src: '*.scss',
+                    dest: '../web' + branch + '/css/',
+                    ext: '.css'
+                }]
+            },
+            production: {
+                options: {
+                    httpPath: '/',
+                    imagesDir: 'images',
+                    javascriptsDir: 'js',
+                    noLineComments: true,
+                    environment: 'production'
+                }
+            }
+        },
+        sass_globbing: {
+            dev: {
+                files: [
+                    {dest: cwd + 'scss/imports/_partials.scss', src: cwd + 'scss/partials/**/*.scss'},
+                    {dest: cwd + 'scss/imports/_core.scss', src: cwd + '.core/' + core_version + '/scss/*.scss'},
+                    {dest: cwd + 'scss/imports/_mixins.scss', src: cwd + 'scss/mixins/*.scss'},
+                    {dest: cwd + 'scss/imports/_modules.scss', src: cwd + 'inc/module/**/scss/*.scss'},
+                ]
+            }
+        },
+        autoprefixer: {
+            options: {
+                browsers: ['> 1%', 'ie >= 7']
+            },
+            prefix: {
+                src: cwd + 'css/build/styles.css',
+                dest: cwd + 'css/build/styles.css'
+            }
+        },
+        css_mqpacker: {
+            pack: {
+                src: cwd + 'css/build/styles.css',
+                dest: cwd + 'css/styles.css'
+            }
+        },
+        webfont: {
+            icons: {
+                src: cwd + 'fonts/svgs/*.svg',
+                dest: cwd + 'fonts/',
+                destCss: cwd + 'scss/',
+                destHtml: cwd + 'fonts/',
+                options: {
+                    htmlDemo: false,
+                    stylesheet: 'scss',
+                    relativeFontPath: '/fonts/',
+                    template: cwd + 'fonts/templates/icons.scss',
+                    normalize: false
+                }
+            }
+        },
+        rename: {
+            icons: {
+                src: cwd + 'scss/_icons.scss',
+                dest: cwd + 'scss/__icons.scss'
+            }
+        },
+        copy: {
+            css: {
+                expand: true,
+                cwd: cwd + 'css/build/',
+                src: 'ie*',
+                dest: cwd + 'css/',
+                flatten: true,
+            }
+        },
+        concat: {
+            options: {
+                separator: ";\n"
+            },
+            js: {
+                src: [
+                    cwd + '.core/' + core_version + '/js/php_functions.js',
+                    cwd + '.core/' + core_version + '/js/jquery/1.11.1.js',
+                    cwd + '.core/' + core_version + '/js/core.js',
+                    cwd + '.core/' + core_version + '/js/ajax_factory.js',
+                    cwd + '.core/' + core_version + '/js/jquery/colorbox.1.4.33.min.js',
+                    cwd + '.core/' + core_version + '/js/jquery/ui.1.10.3.js',
+                    cwd + '.core/' + core_version + '/js/jquery/cycle2ascycle.js',
+                    cwd + '.core/' + core_version + '/js/ecom.js',
+                    cwd + 'inc/flogas/js/*.js',
+                    cwd + 'js/external/*.js',
+                    cwd + 'js/build/*.js'
+                ],
+                dest: cwd + 'js/script.js',
+                nonull: true
+            }
+        },
+        uglify: {
+            dev: {
+                files: [{
+                    expand: true,
+                    src: cwd + 'js/script.js',
+                    dest: cwd + 'js/script.js'
+                }]
+            },
+            production: {
+                options: {
+                    compress: {
+                        drop_console: true
+                    }
+                },
+                files: [{
+                    expand: true,
+                    cwd: cwd,
+                    src: 'js/script.js',
+                    dest: cwd
+                }]
+            }
+        },
+        jshint: {
+            options: {
+                force: true
+            },
+            local: [cwd + 'js/build/*.js']
+        },
+        manifest: {
+            generate: {
+                options: {
+                    basePath: cwd,
+                    network: ["http://*", "https://*"],
+                    fallback: ["/ /offline.html"],
+                    exclude: [cwd + "js/jquery.min.js"],
+                    preferOnline: false,
+                    timestamp: true,
+                    verbose: true
+                },
+
+                src: [
+                    'js/*.js',
+                    'css/*.css',
+                    'images/**/*.png',
+                    'images/**/*.jpg',
+                    'images/**/*.gif'
+                ],
+                dest: cwd + "core.manifest"
+            }
+        },
+        csssplit: {
+            styles: {
+                src: [cwd + 'css/styles.css'],
+                dest: cwd + 'css/styles.css',
+                options: {
+                    maxSelectors: 4095,
+                    maxPages: 3,
+                    suffix: ''
+                }
+            },
+        },
+        sprite: {
+            all: {
+                src: cwd + '/images/sprites.src/*.png',
+                dest: cwd + '/images/sprite.png',
+                destCss: cwd + '/scss/partials/_sprites.scss'
+            }
+        },
+        watch: {
+            sass: {
+                files: [cwd + '/**/*.scss', '!' + cwd + 'scss/imports/*.scss'],
+                tasks: ['sass_globbing', 'sass:dev']
+            },
+            fonts: {
+                files: [cwd + 'fonts/**/svgs/*.svg'],
+                tasks: ['webfont', 'rename']
+            },
+            css: {
+                files: [cwd + 'css/build/*.css'],
+                tasks: ['css_mqpacker', 'copy:css'],
+                options: {
+                    livereload: {
+                        port: port,
+                        cert: grunt.file.read('/etc/pki/tls/certs/localhost.crt'),
+                        key: grunt.file.read('/etc/pki/tls/private/localhost.key')
+                    }
+                }
+            },
+            js: {
+                files: [cwd + 'js/*/*.js', cwd + '.core/' + core_version + '/js/*', cwd + 'inc/flogas/js/*.js'],
+                tasks: ['jshint', 'concat:js']
+            }
+        },
+        clean: {
+            build: {
+                src: [
+                    '.cache/*',
+                    '!.cache/__css_vars.scss',
+                    '**/.sass-cache',
+                    'css/**/*',
+                    '!css/styles.css',
+                    '!css/styles.css.map',
+                    '**/icons-*.afm'
+                ]
+            }
+        },
+        cssmin: {
+            min: {
+                files: [{
+                    expand: true,
+                    cwd: cwd + 'css/',
+                    src: ['*.css'],
+                    dest: 'css/',
+                    ext: '.css'
+                }]
+            }
+        }
+    });
+
+    grunt.registerTask('css', ['compass:production', 'autoprefixer', 'css_mqpacker']);
+    grunt.registerTask('css_production', ['css', 'cssmin', 'csssplit']);
+    grunt.registerTask('icons', ['webfont', 'rename']);
+    grunt.registerTask('js', ['jshint', 'concat:js', 'uglify:production']);
+    grunt.registerTask('compile', ['clean', 'icons', 'css', 'js']);
+    grunt.registerTask('default', ['watch']);
+    grunt.registerTask('spriteAll', ['sprite']);
+}
